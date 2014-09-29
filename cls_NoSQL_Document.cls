@@ -228,9 +228,31 @@ If InStr(key, ".") <> 0 Then
                         Dim tmp_col As Collection
                         Set tmp_col = tmp_o.Item(match.value)
                         
-                        Dim tmp_dic_in_collection As Scripting.Dictionary
+                        Dim tmp_dic_in_collection 'As Scripting.Dictionary
                         For Each tmp_dic_in_collection In tmp_col
-                            array_CheckSubLevelConstraint.Add tmp_dic_in_collection
+                            If VarType(tmp_dic_in_collection) = vbObject Then
+                                array_CheckSubLevelConstraint.Add tmp_dic_in_collection
+                            Else
+'                                Debug.Print "WARNING cls_NoSQL_Document::get_collection_sub_objects query on scalar variable instead of object (array components). Should use query operator $in. Now cast scalar into compatible object"
+'                                Dim tmp_dic_cast_scalar As Scripting.Dictionary
+'                                Set tmp_dic_cast_scalar = New Scripting.Dictionary
+'                                tmp_dic_cast_scalar.Add match.value, tmp_dic_in_collection
+'
+'                                array_CheckSubLevelConstraint.Add tmp_dic_cast_scalar
+                                
+                                
+                                'last level ?
+                                If k = matches.count Then
+                                    'retourne full collection (=array)
+                                    Dim tmp_array_collection As New Collection
+                                    
+                                    array_CheckSubLevelConstraint.Add tmp_col
+                                    Set get_collection_sub_objects = array_CheckSubLevelConstraint
+                                    Exit Function
+                                End If
+                                
+                                
+                            End If
                         Next
                         
                     End If
@@ -243,7 +265,7 @@ If InStr(key, ".") <> 0 Then
         Next
         
         Set array_CheckLevelConstraint = array_CheckSubLevelConstraint 'next -> current
-        
+        k = k + 1
     Next
     
     Set get_collection_sub_objects = array_CheckLevelConstraint

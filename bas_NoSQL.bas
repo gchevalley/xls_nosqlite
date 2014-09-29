@@ -203,7 +203,7 @@ For k = 0 To 500
                                 Randomize
                                 tmp_nbre_color = CInt(3 * Rnd()) + 1
                             
-                            Dim tmp_vec_color() As Variant, tmp_color As String
+                            Dim tmp_vec_color() As Variant, tmp_color As String, tmp_vec_color_not_as_an_object() As Variant
                             
                             n = 0
                             For j = 0 To tmp_nbre_color
@@ -216,6 +216,10 @@ For k = 0 To 500
                                         dic_tel_subsubsubdic.Add "color", tmp_color
                                     ReDim Preserve tmp_vec_color(n)
                                     Set tmp_vec_color(n) = dic_tel_subsubsubdic
+                                    
+                                    ReDim Preserve tmp_vec_color_not_as_an_object(n)
+                                    tmp_vec_color_not_as_an_object(n) = tmp_color
+                                    
                                     n = n + 1
                                 Else
                                     
@@ -228,6 +232,10 @@ For k = 0 To 500
                                                     dic_tel_subsubsubdic.Add "color", tmp_color
                                                 ReDim Preserve tmp_vec_color(n)
                                                 Set tmp_vec_color(n) = dic_tel_subsubsubdic
+                                                
+                                                ReDim Preserve tmp_vec_color_not_as_an_object(n)
+                                                tmp_vec_color_not_as_an_object(n) = tmp_color
+                                                
                                                 n = n + 1
                                             End If
                                         End If
@@ -239,6 +247,7 @@ For k = 0 To 500
                             Next j
                             
                             dic_tel_subsubdic.Add "tel_available_color_array", tmp_vec_color
+                            dic_tel_subsubdic.Add "tel_available_color_array_no_object", tmp_vec_color_not_as_an_object
                             
                         dic_tel_subdic.Add "mobile_details", dic_tel_subsubdic
                         
@@ -452,7 +461,14 @@ Dim oResultSimple1field As cls_NoSQL_QueryResult, oResultSimpleMultipleField As 
 
 'Set oResultSimple1field = oNoSQLCollection.find("{'name' : 'H', 'tels.type.mobile_details.screen_size': {'$gt' : 7}, 'tels.type.mobile_details.brand': 'lg'}")
 
-Set oResultSimple1field = oNoSQLCollection.find("{'tels.type.mobile_details.tel_available_color_array.color': 'yellow'}")
+
+'Set oResultSimple1field = oNoSQLCollection.find("{'tels.type.mobile_details.tel_available_color_array.color': 'yellow'}") 'ok query on object
+'Set oResultSimple1field = oNoSQLCollection.find("{'tels.type.mobile_details.tel_available_color_array_no_object': 'yellow'}") 'not ok because should use $in for array -> ok grace auto cast
+'Set oResultSimple1field = oNoSQLCollection.find("{'tels.type.mobile_details.tel_available_color_array_no_object': {'$in' : ['yellow', 'gold', 'gray']}}")
+'Set oResultSimple1field = oNoSQLCollection.find("{'tels.type.mobile_details.tel_available_color_array_no_object': {'$size' : 4}}")
+'Set oResultSimple1field = oNoSQLCollection.find("{'tels.type.mobile_details.screen_size' : {'$exists' : true}}")
+Set oResultSimple1field = oNoSQLCollection.find("{'$nor' : [{'name':'C'}, {'surname':'v'}]}")
+
 
 For Each tmp_oid In oResultSimple1field.documents.keys
     Set tmp_doc = oResultSimple1field.documents.Item(tmp_oid)
@@ -467,6 +483,8 @@ End Sub
 Private Sub test_nosqlite_dic()
 
 Dim oJSON As New jsonlib
+
+
 
 Set blub = oJSON.parse("[[""age"",1],[""name"", -1]]") ' retourne une collection car l ordre compte dans un array !
 
@@ -502,8 +520,13 @@ Set tmp_dic = New Scripting.Dictionary
         
             Randomize
         tmp_dic.Add "age", CInt(Rnd() * 100)
+        tmp_dic.Add "blub", True
 
 Debug.Print oJSON.toString(vec_tel)
+Debug.Print oJSON.toString(tmp_dic)
+
+Set o = oJSON.parse(oJSON.toString(tmp_dic))
+    blbub = o.Item("blub")
 
 End Sub
 

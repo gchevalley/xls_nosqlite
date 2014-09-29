@@ -93,11 +93,113 @@ Dim matches As VBScript_RegExp_55.MatchCollection
 Dim final_query_json As Scripting.Dictionary
 Set final_query_json = transform_query_into_object(oQueryJSON)
 
+Dim tmp_constraint_field As Variant
+
+Dim tmp_sub_constraint As Scripting.Dictionary
+Dim tmp_key_sub_constraint As Variant 'devrait y en avoir qu une seule
+
 If final_query_json Is Nothing Then
     Debug.Print "ERROR cls_NoSQL_Collection::find with oQueryJSON -> Quit"
     Exit Function
 Else
     find.query = oJSON.toString(final_query_json)
+    
+    'check for sub queries
+    If final_query_json.count = 1 Then
+        
+        For Each tmp_constraint_field In final_query_json.keys
+        
+            Select Case tmp_constraint_field
+            
+                Case "$or"
+                
+                    Dim col_or_sub_queries As Collection
+                    
+                    If TypeOf final_query_json.Item(tmp_constraint_field) Is Collection Then
+                        
+                        Set col_or_sub_queries = final_query_json.Item(tmp_constraint_field)
+                        
+                        Dim dic_or_sub_query As Object 'Scripting.Dictionary
+                        
+                        Dim oResultOr As cls_NoSQL_QueryResult
+                        For Each dic_or_sub_query In col_or_sub_queries
+                            
+                            Set oResultOr = Me.find(dic_or_sub_query)
+                            
+                            Dim tmp_or_oid As Variant
+                            For Each tmp_or_oid In oResultOr.documents.keys
+                                If find.documents.Exists(tmp_or_oid) = False Then
+                                    find.append_document oResultOr.documents.Item(tmp_or_oid)
+                                Else
+                                    Debug.Print "INFO cls_NoSQL_Collection::find _id: " & tmp_or_oid & " already in results"
+                                End If
+                            Next
+                        Next
+                        
+                        Debug.Print "INFO cls_NoSQL_Collection::find query: " & oJSON.toString(final_query_json) & " returns: " & find.count & " result(s)"
+                        Exit Function
+                    Else
+                        Debug.Print "ERROR cls_NoSQL_Collection::find $or need an array of queries objects : [{query1}, {query2}, ... , {queryn}]"
+                    End If
+                
+                Case "$and"
+                    
+                    'transforme en query normal
+                    Dim col_and_sub_queries As Collection
+                    
+                    If TypeOf final_query_json.Item(tmp_constraint_field) Is Collection Then
+                        
+                        Set col_and_sub_queries = final_query_json.Item(tmp_constraint_field)
+                        
+                        Dim dic_and_sub_query As Object 'Scripting.Dictionary
+                        
+                        Dim tmp_key_dic_and_sub_query As Variant
+                        
+                        Dim dic_normal_query As New Scripting.Dictionary
+                        For Each dic_and_sub_query In col_and_sub_queries
+                            
+                            For Each tmp_key_dic_and_sub_query In dic_and_sub_query.keys
+                                dic_normal_query.Add tmp_key_dic_and_sub_query, dic_and_sub_query.Item(tmp_key_dic_and_sub_query)
+                            Next
+                        Next
+                        
+                        Set find = Me.find(dic_normal_query)
+                        
+                        Debug.Print "INFO cls_NoSQL_Collection::find query: " & oJSON.toString(final_query_json) & " returns: " & find.count & " result(s)"
+                        Exit Function
+                    Else
+                        Debug.Print "ERROR cls_NoSQL_Collection::find $or need an array of queries objects : [{query1}, {query2}, ... , {queryn}]"
+                    End If
+                
+                Case "$nor"
+                    
+                    Dim dic_nor_or_query As New Scripting.Dictionary, dic_nor_and_query As New Scripting.Dictionary
+                        dic_nor_or_query.Add "$or", final_query_json.Item(tmp_constraint_field)
+                        dic_nor_and_query.Add "$and", final_query_json.Item(tmp_constraint_field)
+                    
+                    
+                    Dim oQueryResultNorOr As cls_NoSQL_QueryResult, oQueryResultNorAnd As cls_NoSQL_QueryResult
+                    Set oQueryResultNorOr = Me.find(dic_nor_or_query)
+                        
+                    Set oQueryResultNorAnd = Me.find(dic_nor_and_query)
+                        
+                    Dim tmp_nor_oid As Variant
+                    For Each tmp_nor_oid In oQueryResultNorOr.documents.keys
+                        If oQueryResultNorAnd.documents.Exists(tmp_nor_oid) = False Then
+                            find.append_document oQueryResultNorOr.documents.Item(tmp_nor_oid)
+                        End If
+                    Next
+                    
+                    Debug.Print "INFO cls_NoSQL_Collection::find query: " & oJSON.toString(final_query_json) & " returns: " & find.count & " result(s)"
+                    Exit Function
+                    
+            End Select
+
+            Exit For
+        Next
+        
+    End If
+    
 End If
 
 
@@ -128,17 +230,45 @@ Dim find_candidate As Boolean
 
 Dim dic_constraints_find_candidate As New Scripting.Dictionary
 
+Dim tmp_scalar_value_in_array As Variant
+
+Dim dic_check_in_constraints As Scripting.Dictionary
+Dim tmp_in_scalar_value As Variant
+
 For Each tmp_oid In Me.documents.keys
     
     Set oDoc = Me.documents.Item(tmp_oid)
     
     'passe en revue les contraintes
     Set dic_constraints_find_candidate = New Scripting.Dictionary
-    Dim tmp_constraint_field As Variant
+    
+    
+    'Dim vec_constraints_on_array_instead_of_object() As Variant
+        'vec_constraints_on_array_instead_of_object = Array("$all", "$in", "$nin", "$size")
+    
     For Each tmp_constraint_field In final_query_json.keys
         
+        'type de contrainte scalaire, complexe -> egalement checker operator, optimiser avec regexp
+        Dim is_query_operator As Boolean
+        is_query_operator = False
+        If (VarType(final_query_json.Item(tmp_constraint_field)) = vbObject And TypeOf final_query_json.Item(tmp_constraint_field) Is Scripting.Dictionary) Then
+            
+            'transforme en dico si necessaire
+            If (VarType(final_query_json.Item(tmp_constraint_field)) = vbObject And TypeOf final_query_json.Item(tmp_constraint_field) Is Scripting.Dictionary) Then
+                Set tmp_sub_constraint = final_query_json.Item(tmp_constraint_field)
+            Else
+                Set tmp_sub_constraint = oJSON.parse(CStr(final_query_json.Item(tmp_constraint_field)))
+            End If
+            
+            is_query_operator = True
+            
+        Else
+            
+        End If
+        
+        
         Dim col_objects_to_check As Collection 'un obet candidat contient juste tout le schema de cles necessaire et se trouve au dernier niveau il ne reste qu a checker la contrainte
-        Set col_objects_to_check = oDoc.get_collection_sub_objects(tmp_constraint_field)
+        Set col_objects_to_check = oDoc.get_collection_sub_objects(tmp_constraint_field) 'collection d objet dictionaire ou collection d une collection (array)
         
         'Dim col_final_candidates As Collection non implementer pour gagner en rapidite d execution sur les recherches
         
@@ -152,105 +282,249 @@ For Each tmp_oid In Me.documents.keys
             Dim tmp_constraint_field_last_level As String
             tmp_constraint_field_last_level = find_get_last_level_on_query_field(tmp_constraint_field)
             
-            For Each dic_CheckLevelConstraint In col_objects_to_check
+            'For Each dic_CheckLevelConstraint In col_objects_to_check
+            Dim tmp_sub_dic_or_col As Object
+            For Each tmp_sub_dic_or_col In col_objects_to_check
                 
-                If find_candidate = False Then
-        
-                    If dic_CheckLevelConstraint.Exists(tmp_constraint_field_last_level) Then
+                
+                If TypeOf tmp_sub_dic_or_col Is Scripting.Dictionary Then
+                    
+                    If find_candidate = False Then
                         
-                        'type de contrainte scalaire, complexe -> egalement checker operator, optimiser avec regexp
-                        If (VarType(final_query_json.Item(tmp_constraint_field)) = vbObject And TypeOf final_query_json.Item(tmp_constraint_field) Is Scripting.Dictionary) Then
+                        Set dic_CheckLevelConstraint = tmp_sub_dic_or_col
+                        
+                        If dic_CheckLevelConstraint.Exists(tmp_constraint_field_last_level) Then
                             
-                            Dim tmp_sub_constraint As Scripting.Dictionary
-                            
-                            'transforme en dico si necessaire
-                            If (VarType(final_query_json.Item(tmp_constraint_field)) = vbObject And TypeOf final_query_json.Item(tmp_constraint_field) Is Scripting.Dictionary) Then
-                                Set tmp_sub_constraint = final_query_json.Item(tmp_constraint_field)
-                            Else
-                                Set tmp_sub_constraint = oJSON.parse(CStr(final_query_json.Item(tmp_constraint_field)))
-                            End If
-                            
-                            
-                            'repere l operator
-                            Dim tmp_key_sub_constraint As Variant 'devoir y en avoir qu une seule
-                            For Each tmp_key_sub_constraint In tmp_sub_constraint.keys
+                            'type de contrainte scalaire, complexe -> egalement checker operator, optimiser avec regexp
+                            If is_query_operator Then
                                 
-                                Select Case tmp_key_sub_constraint
-                                
-                                    Case "$gt"
-                                        If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
-                                            If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                'repere l operator
+                                For Each tmp_key_sub_constraint In tmp_sub_constraint.keys
+                                    
+                                    Select Case tmp_key_sub_constraint
+                                    
+                                        Case "$gt"
+                                            If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
+                                                If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                                    If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) > tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                                        find_candidate = True
+                                                    End If
+                                                End If
+                                            Else
                                                 If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) > tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
                                                     find_candidate = True
                                                 End If
                                             End If
-                                        Else
-                                            If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) > tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
-                                                find_candidate = True
-                                            End If
-                                        End If
-                                    
-                                    
-                                    Case "$gte"
-                                        If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
-                                            If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                        
+                                        
+                                        Case "$gte"
+                                            If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
+                                                If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                                    If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) >= tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                                        find_candidate = True
+                                                    End If
+                                                End If
+                                            Else
                                                 If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) >= tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
                                                     find_candidate = True
                                                 End If
                                             End If
-                                        Else
-                                            If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) >= tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
-                                                find_candidate = True
-                                            End If
-                                        End If
-                                    
-                                    
-                                    Case "$lt"
-                                        If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
-                                            If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                        
+                                        
+                                        Case "$lt"
+                                            If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
+                                                If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                                    If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) < tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                                        find_candidate = True
+                                                    End If
+                                                End If
+                                            Else
                                                 If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) < tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
                                                     find_candidate = True
                                                 End If
                                             End If
-                                        Else
-                                            If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) < tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
-                                                find_candidate = True
-                                            End If
-                                        End If
-                                    
-                                    
-                                    Case "$lte"
-                                        If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
-                                            If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                        
+                                        
+                                        Case "$lte"
+                                            If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
+                                                If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                                    If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) <= tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                                        find_candidate = True
+                                                    End If
+                                                End If
+                                            Else
                                                 If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) <= tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
                                                     find_candidate = True
                                                 End If
                                             End If
-                                        Else
-                                            If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) <= tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
-                                                find_candidate = True
+                                        
+                                        
+                                        Case "$ne"
+                                            If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
+                                                If IsNumeric(dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level)) Then
+                                                    If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) <> tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                                        find_candidate = True
+                                                    End If
+                                                End If
+                                            Else
+                                                If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) <> tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                                    find_candidate = True
+                                                End If
                                             End If
-                                        End If
+                                        
+                                        
+                                        Case "$exists"
+                                            find_candidate = True
+                                        
+                                        
+                                        Case "$nin"
+                                            
+                                            Set dic_check_in_constraints = New Scripting.Dictionary
                                     
-                                    
-                                    'Case "$all"
-                                    
-                                    
-                                    Case Else
-                                        Debug.Print "WARNING cls_NoSQL_Collection::find unkown operator " & tmp_key_sub_constraint
-                                End Select
-                            Next
-                        
-                        Else
-                            ' simple check equality
-                            If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) = final_query_json.Item(tmp_constraint_field) Then
-                                find_candidate = True
+                                            For Each tmp_in_scalar_value In tmp_sub_constraint.Item(tmp_key_sub_constraint)
+                                                
+                                                dic_check_in_constraints.Add tmp_in_scalar_value, False
+                                                
+                                                If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) = tmp_in_scalar_value Then
+                                                    dic_check_in_constraints.Item(tmp_in_scalar_value) = True
+                                                    Exit For
+                                                End If
+                                                
+                                            Next
+                                            
+                                            find_candidate = True
+                                            For Each tmp_in_scalar_value In dic_check_in_constraints.keys
+                                                If dic_check_in_constraints.Item(tmp_in_scalar_value) = True Then
+                                                    find_candidate = False
+                                                End If
+                                            Next
+                                            
+                                        
+                                        Case Else
+                                            Debug.Print "WARNING cls_NoSQL_Collection::find unkown operator " & tmp_key_sub_constraint
+                                    End Select
+                                Next
+                            
+                            Else
+                                ' simple check equality
+                                If dic_CheckLevelConstraint.Item(tmp_constraint_field_last_level) = final_query_json.Item(tmp_constraint_field) Then
+                                    find_candidate = True
+                                End If
+                                
                             End If
                             
+                            
                         End If
+                    
+                    End If
+                
+                ElseIf TypeOf tmp_sub_dic_or_col Is Collection Then
+                    
+                    
+                    If is_query_operator Then
                         
+                        'repere l operator
+                        For Each tmp_key_sub_constraint In tmp_sub_constraint.keys
+                            
+                            Select Case tmp_key_sub_constraint
+                                
+                                Case "$in" 'at least one...
+                                    
+                                    Set dic_check_in_constraints = New Scripting.Dictionary
+                                    
+                                    For Each tmp_in_scalar_value In tmp_sub_constraint.Item(tmp_key_sub_constraint)
+                                        
+                                        dic_check_in_constraints.Add tmp_in_scalar_value, False
+                                        
+                                        For Each tmp_scalar_value_in_array In tmp_sub_dic_or_col
+                                            If tmp_scalar_value_in_array = tmp_in_scalar_value Then
+                                                dic_check_in_constraints.Item(tmp_in_scalar_value) = True
+                                                Exit For
+                                            End If
+                                        Next
+                                        
+                                    Next
+                                    
+                                    find_candidate = False
+                                    For Each tmp_in_scalar_value In dic_check_in_constraints.keys
+                                        If dic_check_in_constraints.Item(tmp_in_scalar_value) = True Then
+                                            find_candidate = True
+                                        End If
+                                    Next
+                                
+                                Case "$nin"
+                                    
+                                    Set dic_check_in_constraints = New Scripting.Dictionary
+                                    
+                                    For Each tmp_in_scalar_value In tmp_sub_constraint.Item(tmp_key_sub_constraint)
+                                        
+                                        dic_check_in_constraints.Add tmp_in_scalar_value, False
+                                        
+                                        For Each tmp_scalar_value_in_array In tmp_sub_dic_or_col
+                                            If tmp_scalar_value_in_array = tmp_in_scalar_value Then
+                                                dic_check_in_constraints.Item(tmp_in_scalar_value) = True
+                                                Exit For
+                                            End If
+                                        Next
+                                        
+                                    Next
+                                    
+                                    find_candidate = True
+                                    For Each tmp_in_scalar_value In dic_check_in_constraints.keys
+                                        If dic_check_in_constraints.Item(tmp_in_scalar_value) = True Then
+                                            find_candidate = False
+                                        End If
+                                    Next
+                                
+                                Case "$all" 'need all
+                                    
+                                    Set dic_check_in_constraints = New Scripting.Dictionary
+                                    
+                                    For Each tmp_in_scalar_value In tmp_sub_constraint.Item(tmp_key_sub_constraint)
+                                        
+                                        dic_check_in_constraints.Add tmp_in_scalar_value, False
+                                        
+                                        For Each tmp_scalar_value_in_array In tmp_sub_dic_or_col
+                                            If tmp_scalar_value_in_array = tmp_in_scalar_value Then
+                                                dic_check_in_constraints.Item(tmp_in_scalar_value) = True
+                                                Exit For
+                                            End If
+                                        Next
+                                        
+                                    Next
+                                    
+                                    find_candidate = True
+                                    For Each tmp_in_scalar_value In dic_check_in_constraints.keys
+                                        If dic_check_in_constraints.Item(tmp_in_scalar_value) = False Then
+                                            find_candidate = False
+                                        End If
+                                    Next
+                                    
+                                
+                                Case "$size"
+                                        
+                                    find_candidate = False
+                                    
+                                    If IsNumeric(tmp_sub_constraint.Item(tmp_key_sub_constraint)) Then
+                                        If tmp_sub_dic_or_col.count = tmp_sub_constraint.Item(tmp_key_sub_constraint) Then
+                                            find_candidate = True
+                                        End If
+                                    End If
+
+                                    
+                                
+                                Case Else
+                                    Debug.Print "WARNING cls_NoSQL_Collection::find unkown operator " & tmp_key_sub_constraint
+                            End Select
+                        
+                        Next
+                        
+                    Else
+                        
+                        Debug.Print "ERROR cls_NoSQL_Collection::find query on array field without a query operator ($all, $in, $nin, $size)"
                         
                     End If
+                    
                 
                 End If
             
