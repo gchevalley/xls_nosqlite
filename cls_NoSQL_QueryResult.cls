@@ -21,7 +21,7 @@ Dim k As Long, m As Long, n As Long
 
 Dim oJSON As New jsonlib
 
-Dim oCollection_sort As Collection
+Dim oCollection_sort As collection
 Set oCollection_sort = Me.ref_collection.transform_query_into_object(oQuery)
 
 If oCollection_sort Is Nothing Then
@@ -29,7 +29,7 @@ If oCollection_sort Is Nothing Then
     Exit Function
 End If
 
-Dim tmp_sort_filter As Collection
+Dim tmp_sort_filter As collection
 For Each tmp_sort_filter In oCollection_sort
     
     If tmp_sort_filter.count = 2 Then

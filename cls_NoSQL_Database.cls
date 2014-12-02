@@ -16,12 +16,9 @@ Public sqlite_field_oid As String
 Public sqlite_field_json_data As String
 
 Public oOId As cls_NoSQL_ObjectId
-    'Private last_timestamp As Long
-    'Private objectid_count As Long
     
 Public collections As Scripting.Dictionary
 
-'Private Const nosql_encode_char_json As String = "*#"
 Private Const nosql_encode_char_json As String = "'"
 
 
@@ -37,27 +34,32 @@ Me.sqlite_field_json_data = "json_data"
 
 
 Set Me.oOId = New cls_NoSQL_ObjectId
-    'last_timestamp = Me.oOId.get_current_timestamp_unix()
-    'objectid_count = 0
-
 
 Set collections = New Scripting.Dictionary 'pour la partie purement excel -> doit etre sync tout le temps avec DB
 
 End Sub
 
 
+' creation ou chargment d une base physique existante a partir d un fichier
+    ' @author : gchevalley
+    ' @version : 0.1
+    '
+    ' @param filepath : changement d acces en local du fichier contenant la base de donnees physique
+    '
+    ' @return : void
 Public Function setup_with_file(ByVal filepath As String)
 
 local_filepath = filepath
-'sqlite3_create_db filepath
 create_new_database
-
-'mount les tables
-
 
 End Function
 
 
+' creation ou chargement de la base de donnees physique
+    ' @author : gchevalley
+    ' @version : 0.1
+    '
+    ' @return : void
 Private Function create_new_database()
 
 sqlite3_create_db Me.local_filepath
@@ -103,6 +105,13 @@ Next i
 End Function
 
 
+'charge ou cree une collection a l interieur de la base de donnees
+    ' @author : gchevalley
+    ' @version : 0.1
+    '
+    ' @param collection_name : nom de la collection avec laquelle on souhaite travailler
+    '
+    ' @return : objet cls_NoSQL_Collection sur lequel il va etre possible de faire des insertions, des selections, des updates et suppressions
 Public Function use(ByVal collection_name As String) As cls_NoSQL_Collection
 
 Debug.Print "INFO enter cls_NoSQL_Database::use with collection_name: " & collection_name
@@ -163,6 +172,13 @@ End If
 End Function
 
 
+' si la collection n existe pas encore dans la base physique, cette fonction va cree les structures d accueil physique necessaire
+    ' @author : gchevalley
+    ' @version : 0.1
+    '
+    ' @param collection_name : nom de la collection a cree
+    '
+    ' @return : objet cls_NoSQL_Collection nouvellement initialise
 Private Function create_new_collection(ByVal collection_name As String) As cls_NoSQL_Collection
 
 Debug.Print "INFO enter cls_NoSQL_Database::create_new_collection with collection_name: " & collection_name
